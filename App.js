@@ -32,13 +32,16 @@ function Items({ done: doneHeading, onPressItem }) {
   const [items, setItems] = useState(null);
 
   useEffect(() => {
-    db.transaction((tx) => {
-      tx.executeSql(
-        `select * from items where done = ?;`,
-        [doneHeading ? 1 : 0],
-        (_, { rows: { _array } }) => setItems(_array)
-      );
-    });
+    const loadData = async () => {
+      await db.transactionAsync(async (tx) => {
+        let result = await tx.executeAsync(
+          `select * from items where done = ?;`,
+          [doneHeading ? 1 : 0]
+        );
+        setItems(result.rows._array);
+      });
+    }
+    loadData();
   }, []);
 
   const heading = doneHeading ? "Completed" : "Todo";
@@ -73,25 +76,27 @@ export default function App() {
   const [forceUpdate, forceUpdateId] = useForceUpdate();
 
   useEffect(() => {
-    db.transaction((tx) => {
-      tx.executeSql(
-        "create table if not exists items (id integer primary key not null, done int, value text);"
-      );
-    });
+    const initTables = async () => {
+      await db.transactionAsync(async (tx) => {
+        await tx.executeAsync(
+          "create table if not exists items (id integer primary key not null, done int, value text);"
+        );
+      });
+    }
+    initTables();
   }, []);
 
-  const add = (text) => {
+  const add = async (text) => {
     // is text empty?
     if (text === null || text === "") {
       return false;
     }
 
-    db.transaction(
-      (tx) => {
-        tx.executeSql("insert into items (done, value) values (0, ?)", [text]);
-        tx.executeSql("select * from items", [], (_, { rows }) =>
-          console.log(JSON.stringify(rows))
-        );
+    await db.transactionAsync(
+      async (tx) => {
+        await tx.executeAsync("insert into items (done, value) values (0, ?)", [text]);
+        let result = await tx.executeAsync("select * from items", []);
+        console.log(JSON.stringify(result.rows))
       },
       null,
       forceUpdate
@@ -128,30 +133,38 @@ export default function App() {
             <Items
               key={`forceupdate-todo-${forceUpdateId}`}
               done={false}
-              onPressItem={(id) =>
-                db.transaction(
-                  (tx) => {
-                    tx.executeSql(`update items set done = 1 where id = ?;`, [
-                      id,
-                    ]);
-                  },
-                  null,
-                  forceUpdate
-                )
+              onPressItem={(taskId) => {
+                  async function completeTask(id){
+                    await db.transactionAsync(
+                      async (tx) => {
+                        await tx.executeAsync(`update items set done = 1 where id = ?;`, [
+                          id,
+                        ]);
+                      },
+                      null,
+                      forceUpdate
+                    );
+                  }
+                  completeTask(taskId);
+                }
               }
             />
             <Items
               done
               key={`forceupdate-done-${forceUpdateId}`}
-              onPressItem={(id) =>
-                db.transaction(
-                  (tx) => {
-                    tx.executeSql(`delete from items where id = ?;`, [id]);
-                  },
-                  null,
-                  forceUpdate
-                )
-              }
+              onPressItem={(id) => {
+                  async function removeTask(taskId){
+                    await db.transactionAsync(
+                      async (tx) => {
+                        await tx.executeasync(`delete from items where id = ?;`, [taskId]);
+                      },
+                      null,
+                      forceUpdate
+                    )
+                  }
+                  removeTask(id);
+                }
+              } 
             />
           </ScrollView>
         </>
