@@ -34,7 +34,7 @@ function Items({ done: doneHeading, onPressItem }) {
   useEffect(() => {
     const loadData = async () => {
       await db.transactionAsync(async (tx) => {
-        let result = await tx.executeAsync(
+        let result = await tx.executeSqlAsync(
           `select * from items where done = ?;`,
           [doneHeading ? 1 : 0]
         );
@@ -78,7 +78,7 @@ export default function App() {
   useEffect(() => {
     const initTables = async () => {
       await db.transactionAsync(async (tx) => {
-        await tx.executeAsync(
+        await tx.executeSqlAsync(
           "create table if not exists items (id integer primary key not null, done int, value text);"
         );
       });
@@ -94,8 +94,8 @@ export default function App() {
 
     await db.transactionAsync(
       async (tx) => {
-        await tx.executeAsync("insert into items (done, value) values (0, ?)", [text]);
-        let result = await tx.executeAsync("select * from items", []);
+        await tx.executeSqlAsync("insert into items (done, value) values (0, ?)", [text]);
+        let result = await tx.executeSqlAsync("select * from items", []);
         console.log(JSON.stringify(result.rows))
       },
       null,
@@ -137,7 +137,7 @@ export default function App() {
                   async function completeTask(id){
                     await db.transactionAsync(
                       async (tx) => {
-                        await tx.executeAsync(`update items set done = 1 where id = ?;`, [
+                        await tx.executeSqlAsync(`update items set done = 1 where id = ?;`, [
                           id,
                         ]);
                       },
@@ -156,7 +156,7 @@ export default function App() {
                   async function removeTask(taskId){
                     await db.transactionAsync(
                       async (tx) => {
-                        await tx.executeasync(`delete from items where id = ?;`, [taskId]);
+                        await tx.executeSqlAsync(`delete from items where id = ?;`, [taskId]);
                       },
                       null,
                       forceUpdate
