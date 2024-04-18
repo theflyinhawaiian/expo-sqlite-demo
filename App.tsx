@@ -9,13 +9,11 @@ import {
   View,
 } from "react-native";
 import Constants from "expo-constants";
-import * as SQLite from "expo-sqlite";
+import { SQLiteProvider, useSQLiteContext, type SQLiteDatabase } from "expo-sqlite/next";
 
 function isStringArray(x: any){
   return Array.isArray(x) && typeof x[0] === "string"
 }
-
-const db = SQLite.openDatabase("db.db");
 
 interface Item {
   id: number,
@@ -23,24 +21,24 @@ interface Item {
   value: string,
 }
 
+export default function App(){
+  return (
+    <View style={styles.container}>
+      <SQLiteProvider databaseName="db.db" onInit={migrateDbIfNeeded}>
+        <Content />
+      </SQLiteProvider>
+    </View>
+    );
+}
+
 function Items({ done: doneHeading, onPressItem } : { done: boolean, onPressItem: (x : number) => void }) {
+  const db = useSQLiteContext();
   const [items, setItems] = useState<Item[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
-      await db.transactionAsync(async (tx) => {
-        let result = await tx.executeSqlAsync(
-          `select * from items where done = ?;`,
-          [doneHeading ? 1 : 0]
-        );
-        if(!('_array' in result.rows))
-          return;
-
-        if(!Array.isArray(result.rows._array) || !isStringArray(result.rows._array))
-          return;
-
-        setItems(result.rows._array);
-      });
+      const result = await db.getAllAsync<Item>(`select * from items where done = ?;`, [doneHeading ? 1 : 0]);
+      setItems(result);
     }
     loadData();
   }, []);
@@ -73,21 +71,11 @@ function Items({ done: doneHeading, onPressItem } : { done: boolean, onPressItem
   );
 }
 
-export default function App() {
+function Content(){
+  const db = useSQLiteContext();
   const [text, setText] = useState<string>("");
   const [forceUpdateId, forceUpdate] = useForceUpdate();
 
-
-  useEffect(() => {
-    const initTables = async () => {
-      await db.transactionAsync(async (tx) => {
-        await tx.executeSqlAsync(
-          "create table if not exists items (id integer primary key not null, done int, value text);"
-        );
-      });
-    }
-    initTables();
-  }, []);
 
   const add = async (text : string) => {
     console.log("adding: " + text);
@@ -96,19 +84,12 @@ export default function App() {
       return false;
     }
 
-    await db.transactionAsync(
-      async (tx) => {
-        console.log("beginning add transaction");
-        await tx.executeSqlAsync("insert into items (done, value) values (0, ?)", [text]);
-        let result = await tx.executeSqlAsync("select * from items", []);
-        console.log(JSON.stringify(result.rows))
-        forceUpdate();
-      }, false
-    );
+    await db.runAsync("insert into items (done, value) values (0, ?)", [text]);
+    forceUpdate();
   };
 
   return (
-    <View style={styles.container}>
+    <>
       <Text style={styles.heading}>SQLite Example</Text>
 
       {Platform.OS === "web" ? (
@@ -139,14 +120,8 @@ export default function App() {
               done={false}
               onPressItem={(taskId) => {
                   async function completeTask(id : number){
-                    await db.transactionAsync(
-                      async (tx) => {
-                        await tx.executeSqlAsync(`update items set done = 1 where id = ?;`, [
-                          id,
-                        ]);
-                        forceUpdate();
-                      }
-                    );
+                    await db.runAsync(`update items set done = 1 where id = ?;`, [id]);
+                    forceUpdate();
                   }
                   completeTask(taskId);
                 }
@@ -157,13 +132,10 @@ export default function App() {
               key={`forceupdate-done-${forceUpdateId}`}
               onPressItem={(id) => {
                   async function removeTask(taskId : number){
-                    await db.transactionAsync(
-                      async (tx) => {
-                        await tx.executeSqlAsync(`delete from items where id = ?;`, [taskId]);
-                        forceUpdate();
-                      }
-                    )
+                    await db.runAsync(`delete from items where id = ?;`, [taskId]);
+                    forceUpdate();
                   }
+                  
                   removeTask(id);
                 }
               } 
@@ -171,13 +143,17 @@ export default function App() {
           </ScrollView>
         </>
       )}
-    </View>
+    </>
   );
 }
 
 function useForceUpdate() : [number, () => void] {
   const [value, setValue] = useState(0);
   return [value, () => setValue(value + 1)];
+}
+
+async function migrateDbIfNeeded(db: SQLiteDatabase){
+  await db.execAsync("create table if not exists items (id integer primary key not null, done int, value text);");
 }
 
 const styles = StyleSheet.create({
